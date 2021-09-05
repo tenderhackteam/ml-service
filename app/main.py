@@ -1,5 +1,8 @@
 import asyncio, aio_pika, os, json
+from functools import partial
+
 from ml.recommendal_system import Skynet
+
 
 async def generate(body):
     predictor = Skynet()
@@ -13,35 +16,29 @@ async def generate(body):
     return answer
 
 
+async def on_message(exchange: aio_pika.Exchange, message: aio_pika.IncomingMessage):
+    async with message.process():
+        body = json.loads(message.body)
+        answer = await generate(body)
+
+        await exchange.publish(
+            aio_pika.Message(
+                body=json.dumps(answer).encode(), correlation_id=message.correlation_id
+            ),
+            routing_key=message.reply_to,
+        )
+
+
 async def main(loop):
-    mq_host = os.environ.get('MQ_HOST')
+    mq_host = os.environ.get("MQ_HOST")
     connection = await aio_pika.connect_robust(mq_host, loop=loop)
-    async with connection:
-        queue_name = "requests_queue"
-        routing_key = "answers_queue"
-        channel = await connection.channel()
-
-        queue = await channel.declare_queue(
-            queue_name,
-            auto_delete=True
-        )   
-
-        async with queue.iterator() as queue_iter:
-            async for message in queue_iter:
-                async with message.process():
-                    body = json.loads(message.body)
-                    answer = await generate(body)
-                    await channel.default_exchange.publish(
-                        aio_pika.Message(
-                            body=json.dumps(answer).encode()
-                        ),
-                        routing_key=routing_key
-                    )
-                    if queue.name in message.body.decode():
-                        break
+    queue_name = "rpc_queue"
+    channel = await connection.channel()
+    queue = await channel.declare_queue(queue_name)
+    await queue.consume(partial(on_message, channel.default_exchange))
 
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(main(loop))
-    loop.close()
+    loop.create_task(main(loop))
+    loop.run_forever()
