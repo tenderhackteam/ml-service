@@ -7,7 +7,6 @@ import random
 from sklearn.model_selection import train_test_split
 from typing import Dict, List, Tuple, Set
 import math
-import os, aioredis
 
 
 class Skynet():
@@ -16,6 +15,7 @@ class Skynet():
 
         self.fold_path = fold_path
         self.model_xgb = xgb.Booster()
+        self.model_xgb.load_model(fold_path + "xgb_regressor")
 
         with open(self.fold_path + 'id2obj.pickle', 'rb') as handle:
             self.id2obj = pickle.load(handle)
@@ -49,8 +49,6 @@ class Skynet():
 
         with open(self.fold_path + 'needed_categories.pickle', 'rb') as handle:
             self.needed_categories = pickle.load(handle)
-        
-        self.model_xgb.load_model(fold_path + "xgb_regressor")
 
     def clean_json(self, json_str: str) -> Dict:
         aska = json_str[::-1]
@@ -81,37 +79,52 @@ class Skynet():
                     pass
         return characts
 
-    async def one_based_connected(self, id: int, topn: int) -> List[int]:
-        obj = self.id2obj[id]
+    def one_based_connected(self, id: int, topn: int) -> List[int]:
+        try:
+            obj = self.id2obj[id]
+        except KeyError:
+            return [34172198 for i in range(topn)]
         characts = self.get_characts(obj)
         candidates = {}
 
-        # raw_top8 = await self.redis.get("top8")
-        # self.top8 = json.loads(raw_top8)
-
-        # raw_top5 = await self.redis.get("top5")
-        # self.top5 = json.loads(raw_top5)
-
-        # raw_top3 = await self.redis.get("top3")
-        # self.top3 = json.loads(raw_top3)
-
         for category in self.top8[obj['Категория']]:
-            category_candidates = self.categories[category]
-            for cand in category_candidates:
-                connected_characts = self.get_characts(self.id2obj[cand])
-                candidates[cand] = math.log(max(1, len(characts & connected_characts))) / 8
+            if category != obj['Категория'] or len(self.top8[obj['Категория']]) < 2:
+                category_candidates = self.categories[category]
+                for cand in category_candidates:
+                    if cand != id:
+                        try:
+                            connected_characts = self.get_characts(
+                                self.id2obj[cand])
+                        except KeyError:
+                            connected_characts = set()
+                        candidates[cand] = math.log(
+                            max(1, len(characts & connected_characts))) / 8
 
         for category in self.top5[obj['Категория']]:
-            category_candidates = self.categories[category]
-            for cand in category_candidates:
-                connected_characts = self.get_characts(self.id2obj[cand])
-                candidates[cand] = math.log(max(1, len(characts & connected_characts))) / 5
+            if category != obj['Категория'] or len(self.top5[obj['Категория']]) < 2:
+                category_candidates = self.categories[category]
+                for cand in category_candidates:
+                    if cand != id:
+                        try:
+                            connected_characts = self.get_characts(
+                                self.id2obj[cand])
+                        except KeyError:
+                            connected_characts = set()
+                        candidates[cand] = math.log(
+                            max(1, len(characts & connected_characts))) / 5
 
         for category in self.top3[obj['Категория']]:
-            category_candidates = self.categories[category]
-            for cand in category_candidates:
-                connected_characts = self.get_characts(self.id2obj[cand])
-                candidates[cand] = math.log(max(1, len(characts & connected_characts))) / 3
+            if category != obj['Категория'] or len(self.top3[obj['Категория']]) < 2:
+                category_candidates = self.categories[category]
+                for cand in category_candidates:
+                    if cand != id:
+                        try:
+                            connected_characts = self.get_characts(
+                                self.id2obj[cand])
+                        except KeyError:
+                            connected_characts = set()
+                        candidates[cand] = math.log(
+                            max(1, len(characts & connected_characts))) / 3
 
         if not pd.isna(obj['Другая продукция в контрактах']) and len(obj['Другая продукция в контрактах'].strip()) > 0:
             st_others = obj['Другая продукция в контрактах']
@@ -120,8 +133,10 @@ class Skynet():
             for prod in st_others:
                 try:
                     connected_obj = prod['OtherSkuId']
-                    connected_characts = self.get_characts(self.decoder[connected_obj])
-                    candidates[connected_obj] = math.log(max(1, len(characts & connected_characts)))
+                    connected_characts = self.get_characts(
+                        self.decoder[connected_obj])
+                    candidates[connected_obj] = math.log(
+                        max(1, len(characts & connected_characts)))
                 except KeyError:
                     pass
 
@@ -188,10 +203,10 @@ class Skynet():
                                 columns=['common', 'contracts', 'views', 'tilt'] + list(self.needed_categories.keys()))
         return self.model_xgb.predict(xgb.DMatrix(features))[0]
 
-    async def get_unsorted_rec_edges(self, checked: List[int]) -> List[Tuple[int]]:
+    def get_unsorted_rec_edges(self, checked: List[int]) -> List[Tuple[int]]:
         possible_edges = []
         for good in checked[-5:]:
-            for good_cand in await self.one_based_connected(good, 10):
+            for good_cand in self.one_based_connected(good, 10):
                 possible_edges.append((good, good_cand))
         return possible_edges
 
@@ -205,7 +220,10 @@ class Skynet():
         return sorted(edges, key=lambda x: - self.get_edge_prob(x[0], x[1]))
 
     def one_based_connected_succedaneum(self, id: int, topn: int = 20) -> List[int]:
-        obj = self.id2obj[id]
+        try:
+            obj = self.id2obj[id]
+        except KeyError:
+            return [34172198 for i in range(topn)]
         characts = self.get_characts(obj)
         candidates = {}
         category = obj['Категория']
@@ -214,8 +232,12 @@ class Skynet():
 
         for cand in category_candidates:
             if cand != id:
-                connected_characts = self.get_characts(self.id2obj[cand])
-                candidates[cand] = math.log(max(1, len(characts & connected_characts))) / 2
+                try:
+                    connected_characts = self.get_characts(self.id2obj[cand])
+                except KeyError:
+                    connected_characts = set()
+                candidates[cand] = math.log(
+                    max(1, len(characts & connected_characts))) / 2
 
         if not pd.isna(obj['Другая продукция в контрактах']) and len(obj['Другая продукция в контрактах'].strip()) > 0:
             st_others = obj['Другая продукция в контрактах']
@@ -224,16 +246,18 @@ class Skynet():
             for prod in st_others:
                 try:
                     connected_obj = prod['OtherSkuId']
-                    connected_characts = self.get_characts(self.decoder[connected_obj])
-                    candidates[connected_obj] = math.log(max(1, len(characts & connected_characts)))
+                    connected_characts = self.get_characts(
+                        self.decoder[connected_obj])
+                    candidates[connected_obj] = math.log(
+                        max(1, len(characts & connected_characts)))
                 except KeyError:
                     pass
 
         sorted_candidates = sorted(candidates, key=lambda x: -candidates[x])
         return sorted_candidates[:topn]
 
-    async def recommend_supplement(self, last_ids: List[int], topn=15):
-        candidates_edges = await self.get_unsorted_rec_edges(last_ids)
+    def recommend_supplement(self, last_ids: List[int], topn=15):
+        candidates_edges = self.get_unsorted_rec_edges(last_ids)
         recommended_edges = self.rang_edges(candidates_edges)[:topn]
         recommended_goods = [i[1] for i in recommended_edges]
         unique = []
@@ -255,7 +279,6 @@ class Skynet():
                 go_set.add(good)
                 unique.append(good)
         return unique
-
 # USAGE EXAMPLE
 # predictor = Skynet()
 # supplement = predictor.recommend_supplement([1257331, 1205312, 1228720])

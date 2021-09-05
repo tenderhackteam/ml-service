@@ -11,7 +11,7 @@ async def generate(body):
         succedaneum = predictor.recommend_succedaneum(body["item_id"])
         answer["succedaneum"] = succedaneum
     if "seen" in body:
-        supplement = await predictor.recommend_supplement(body["seen"])
+        supplement = predictor.recommend_supplement(body["seen"])
         answer["supplement"] = supplement
     return answer
 
