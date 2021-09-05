@@ -15,13 +15,6 @@ from sqlalchemy.orm import sessionmaker, relationship
 import os, asyncio
 
 Base = declarative_base()
-
-class Category(Base):
-    __tablename__ = 'category'
-    id = Column(Integer, primary_key=True)
-    name = Column(String, unique=True)
-    items = relationship("Item", backref="category")
-
 class Item(Base):
     __tablename__ = 'item'
     id = Column(Integer, primary_key=True)
@@ -41,9 +34,16 @@ class Item(Base):
     price = Column(JSON)
 
 
-# async_engine = create_async_engine(
-#     os.environ.get('PSQL_DB')
-# )
+class Category(Base):
+    __tablename__ = 'category'
+    id = Column(Integer, primary_key=True)
+    name = Column(String, unique=True)
+    item = relationship("Item", backref="category")
+
+
+async_engine = create_async_engine(
+    os.environ.get('PSQL_DB')
+)
 engine = create_engine(
     os.environ.get('PSQL_DB')
 )
@@ -51,9 +51,9 @@ Session = sessionmaker(bind=engine)
 session = Session()
 Base.metadata.bind =engine
 Base.metadata.create_all()
-# async_session = sessionmaker(
-#     async_engine, expire_on_commit=False, class_=AsyncSession
-# )
+async_session = sessionmaker(
+    async_engine, expire_on_commit=False, class_=AsyncSession
+)
 
 # async def create_all(engine, meta):
 #     async with engine.begin() as conn:

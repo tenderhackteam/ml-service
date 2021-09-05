@@ -1,8 +1,17 @@
 import asyncio, aio_pika, os, json
-from ml.main import one_based_connected
+from ml.recommendal_system import Skynet
 
 async def generate(body):
-    return await one_based_connected(body["item_id"], body["top_n"])
+    predictor = Skynet()
+    answer = {}
+    if "item_id" in body:
+        succedaneum = predictor.recommend_succedaneum(body["item_id"])
+        answer["succedaneum"] = succedaneum
+    if "seen" in body:
+        supplement = await predictor.recommend_supplement(body["seen"])
+        answer["supplement"] = supplement
+    return answer
+
 
 async def main(loop):
     mq_host = os.environ.get('MQ_HOST')
