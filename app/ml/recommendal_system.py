@@ -16,9 +16,6 @@ class Skynet():
 
         self.fold_path = fold_path
         self.model_xgb = xgb.Booster()
-        self.redis = aioredis.from_url(
-            os.environ.get('REDIS_HOST'), encoding="utf-8", decode_responses=True
-        )
 
         with open(self.fold_path + 'id2obj.pickle', 'rb') as handle:
             self.id2obj = pickle.load(handle)
